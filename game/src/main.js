@@ -167,7 +167,7 @@ function runGame() {
   }
 
   function handleActions() {
-    const actions = input.takeActions();
+    const actions = input.takeActions(ACTION_CONFIRM | ACTION_PAUSE | ACTION_MUTE);
     if (actions & ACTION_MUTE) {
       muted = !muted;
       audio.setMuted(muted);
@@ -207,6 +207,9 @@ function runGame() {
       }
     }
     menuKeys.clear();
+    // Outside play, the world's actions (enter a car, reload) are drained so
+    // a key pressed on a menu does not fire when play resumes.
+    if (screen !== SCREEN_PLAY) input.takeActions();
   }
 
   function frame(now) {

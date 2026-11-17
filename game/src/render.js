@@ -2,7 +2,7 @@
 // streets, the beach, the buildings, the cars, the people — plus the title,
 // pause and busted/wasted screens. The HUD lives in hud.js.
 import { PALETTE, WORLD } from './config.js';
-import { ROAD_HALF } from './city.js';
+import { ROAD_HALF, ROAD_W } from './city.js';
 import { currentMarker } from './missions.js';
 import { drawHUD } from './hud.js';
 

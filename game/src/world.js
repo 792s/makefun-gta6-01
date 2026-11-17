@@ -28,8 +28,9 @@ export function createWorld(seed) {
     ...spawnTraffic(city, rng, TRAFFIC.count),
     ...spawnParked(city, rng, 18),
   ];
-  // Kai's own beater, parked outside the apartment.
-  const ownCar = createCar(start.x + 60, start.y + 40, 0, 'sedan', rng, { state: 'parked', color: '#4f7ec9' });
+  // Kai's own beater, parked at the curb of the avenue by the apartment,
+  // facing down the road so driving off is smooth.
+  const ownCar = createCar(734, 540, Math.PI / 2, 'sedan', rng, { state: 'parked', color: '#4f7ec9' });
   cars.push(ownCar);
   return {
     seed,
@@ -132,7 +133,7 @@ export function stepWorld(state, input, mouseWorld, dt) {
   if (state.saveCooldown > 0) state.saveCooldown -= dt;
 
   const player = state.player;
-  const actions = input.takeActions();
+  const actions = input.takeActions(ACTION_ENTER | ACTION_RELOAD);
 
   // --- Player: on foot or in a car ---
   if (player.state === 'foot') {
@@ -312,9 +313,9 @@ export function stepWorld(state, input, mouseWorld, dt) {
     }
   }
 
-  // --- Safehouse: save when Kai walks in with no mission running ---
+  // --- Safehouse: save when Kai walks in on foot ---
   const home = state.city.locations.safehouse;
-  if (player.state === 'foot' && !state.missions.active && state.saveCooldown <= 0
+  if (player.state === 'foot' && state.saveCooldown <= 0
     && Math.hypot(player.x - home.x, player.y - home.y) < 70) {
     if (saveGame(state)) {
       addToast(state, 'Progress saved at the safehouse', 3);

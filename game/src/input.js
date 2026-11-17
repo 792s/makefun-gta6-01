@@ -78,10 +78,17 @@ export function createInput(canvas) {
     get mouse() {
       return mouse;
     },
-    /** The actions pressed since the last call, then cleared. */
-    takeActions() {
-      const value = actions;
-      actions = 0;
+    /** The actions pressed since the last call, then cleared. With a mask,
+     * only those bits are taken and cleared; the rest stay for the next call,
+     * so the menu and the world can each take what they handle. */
+    takeActions(mask) {
+      if (mask === undefined) {
+        const value = actions;
+        actions = 0;
+        return value;
+      }
+      const value = actions & mask;
+      actions &= ~mask;
       return value;
     },
     /** Whether the mouse was clicked since the last call, then cleared. */
