@@ -11,7 +11,7 @@ const CARS_PER_STAR = [0, 1, 2, 3, 4, 6];
 const COPS_PER_STAR = [0, 1, 2, 2, 3, 4];
 
 export function createWanted() {
-  return { stars: 0, heat: 0, unseenTime: 0 };
+  return { stars: 0, heat: 0, unseenTime: 0, lastSeen: null };
 }
 
 export function starsForHeat(heat) {
@@ -40,12 +40,16 @@ export function clearWanted(wanted) {
   wanted.unseenTime = 0;
 }
 
-function spawnPoliceCar(state, city, rng) {
-  // A road point 400-700 away from the player, never on top of them.
+function spawnPoliceCar(state, city, rng, seen) {
+  // A road point near the player when the chase is hot, farther off when the
+  // player is hiding — a fresh unit answers the area, it does not spawn on
+  // top of a hidden player and spot them for free.
+  const minD = seen ? 400 : 900;
+  const maxD = seen ? 800 : 1200;
   for (let tries = 0; tries < 12; tries += 1) {
     const p = randomRoadPoint(rng, city);
     const d = Math.hypot(p.x - state.player.x, p.y - state.player.y);
-    if (d > 400 && d < 800) {
+    if (d > minD && d < maxD) {
       const angle = Math.atan2(state.player.y - p.y, state.player.x - p.x);
       const car = createCar(p.x, p.y, angle, 'police', rng, { state: 'police' });
       state.cars.push(car);
@@ -88,6 +92,14 @@ export function updatePolice(state, dt, city, rng) {
   for (const cop of state.cops) {
     if (Math.hypot(cop.x - playerPos.x, cop.y - playerPos.y) < POLICE.sightRange) seen = true;
   }
+  // The last place the law saw the player: what the chase drives to when the
+  // player is out of sight. When the heat first comes on, that is the crime
+  // scene — the player's position right now — not a live feed of where they
+  // are, or the police could never lose them.
+  if (seen) wanted.lastSeen = { x: playerPos.x, y: playerPos.y };
+  if (wanted.stars > 0 && !wanted.lastSeen) {
+    wanted.lastSeen = { x: playerPos.x, y: playerPos.y };
+  }
 
   // Cool down: unseen for long enough and a star drops.
   if (wanted.stars > 0) {
@@ -103,11 +115,13 @@ export function updatePolice(state, dt, city, rng) {
     }
   }
 
-  // Keep the right number of patrol cars out.
+  // Keep the right number of patrol cars out: reinforcements while the chase
+  // is hot, and the first response when the heat comes on and no car is out
+  // yet. A hidden player gets no fresh car spawning on top of them.
   const policeCars = state.cars.filter((c) => c.state === 'police');
   const wantCars = CARS_PER_STAR[wanted.stars] || 0;
-  if (policeCars.length < wantCars && wanted.stars > 0) {
-    spawnPoliceCar(state, city, rng);
+  if (policeCars.length < wantCars && wanted.stars > 0 && (seen || policeCars.length === 0)) {
+    spawnPoliceCar(state, city, rng, seen);
   }
   // Cars too far away give up and leave (their drivers go home).
   for (let i = state.cars.length - 1; i >= 0; i -= 1) {
@@ -119,7 +133,8 @@ export function updatePolice(state, dt, city, rng) {
     }
   }
 
-  // Drive the patrol cars at the player.
+  // Drive the patrol cars at the player — or, when the player is out of
+  // sight, at the last place the law saw them.
   for (const car of state.cars) {
     if (car.state !== 'police') continue;
     // Predict where the player will be, so the chase cuts corners.
@@ -128,8 +143,9 @@ export function updatePolice(state, dt, city, rng) {
       ? Math.cos(player.car.angle) * player.car.speed : 0;
     const pvy = player.state === 'car' && player.car
       ? Math.sin(player.car.angle) * player.car.speed : 0;
-    const tx = playerPos.x + pvx * lead;
-    const ty = playerPos.y + pvy * lead;
+    const hunt = seen ? playerPos : (wanted.lastSeen || playerPos);
+    const tx = seen ? playerPos.x + pvx * lead : hunt.x;
+    const ty = seen ? playerPos.y + pvy * lead : hunt.y;
     const dist = Math.hypot(tx - car.x, ty - car.y);
     const { throttle, steer } = steerToward(car, tx, ty, POLICE.chaseSpeed);
     const hit = driveCar(car, throttle, steer, false, dt, city);
@@ -150,15 +166,25 @@ export function updatePolice(state, dt, city, rng) {
       continue;
     }
     if (player.state === 'foot') {
-      cop.angle = Math.atan2(playerPos.y - cop.y, playerPos.x - cop.x);
+      // An officer chases what they can see; out of sight they head for the
+      // last place the law saw the player, and give up when they get there
+      // and find nobody.
+      const copSees = dist < POLICE.sightRange;
+      const target = copSees ? playerPos : (wanted.lastSeen || playerPos);
+      cop.angle = Math.atan2(target.y - cop.y, target.x - cop.x);
       const speed = 265;
       cop.x += Math.cos(cop.angle) * speed * dt;
       cop.y += Math.sin(cop.angle) * speed * dt;
       const fixed = collideCircle(city, cop.x, cop.y, 12);
       cop.x = fixed.x;
       cop.y = fixed.y;
+      if (!copSees && wanted.lastSeen
+        && Math.hypot(wanted.lastSeen.x - cop.x, wanted.lastSeen.y - cop.y) < 50) {
+        state.cops.splice(i, 1);
+        continue;
+      }
       // Close enough, long enough: busted.
-      if (dist < POLICE.bustRange) {
+      if (copSees && dist < POLICE.bustRange) {
         cop.bustTimer += dt;
         if (cop.bustTimer >= POLICE.bustTime) {
           events.push({ type: 'busted' });
@@ -167,8 +193,8 @@ export function updatePolice(state, dt, city, rng) {
       } else {
         cop.bustTimer = Math.max(0, cop.bustTimer - dt * 2);
       }
-      // At 3 stars and up, officers shoot.
-      if (wanted.stars >= 3 && dist < 420 && dist > 60) {
+      // At 3 stars and up, officers shoot — only when they see the player.
+      if (copSees && wanted.stars >= 3 && dist < 420 && dist > 60) {
         cop.shootTimer -= dt;
         if (cop.shootTimer <= 0) {
           cop.shootTimer = 1.15;
