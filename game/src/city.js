@@ -90,7 +90,7 @@ export function generateCity(rng) {
     safehouse: { x: 520, y: 500, name: "Kai's Apartment" },
     veraOffice: { x: 1700, y: 900, name: "Vera's Office" },
     eddiesGarage: { x: 2500, y: 1700, name: "Eddie's Garage" },
-    docksPickup: { x: 3000, y: 1300, name: 'Docks Pickup' },
+    docksPickup: { x: 3050, y: 1450, name: 'Docks Pickup' },
     cometSpot: { x: 900, y: 1900, name: 'Comet GT' },
     policeStation: { x: 1500, y: 300, name: 'Solmara PD' },
     hospital: { x: 2300, y: 700, name: 'St. Mara Hospital' },

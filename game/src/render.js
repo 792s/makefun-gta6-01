@@ -55,11 +55,12 @@ export function createRenderer(canvas) {
       ctx.ellipse(px, py, 90 + (i % 5) * 20, 50 + (i % 3) * 15, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    // Sand, then the sea.
+    // Sand, then the sea. The sea runs past the world's south edge so the
+    // camera never shows grass where the ocean should be.
     ctx.fillStyle = PALETTE.sand;
     ctx.fillRect(0, WORLD.sandY, WORLD.width, WORLD.waterY - WORLD.sandY);
     ctx.fillStyle = PALETTE.water;
-    ctx.fillRect(0, WORLD.waterY, WORLD.width, WORLD.height - WORLD.waterY);
+    ctx.fillRect(0, WORLD.waterY, WORLD.width, 3000);
     // Waves: light bands rolling toward the sand.
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.lineWidth = 3;
