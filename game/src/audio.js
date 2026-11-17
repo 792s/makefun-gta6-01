@@ -84,6 +84,10 @@ export function createAudio() {
     crash(strength) {
       noise(0.18, Math.min(0.5, 0.15 + strength * 0.3), 500);
     },
+    explosion() {
+      noise(0.55, 0.5, 380);
+      blip(90, 0.5, 'sawtooth', 0.25, 35);
+    },
     pickup() {
       blip(660, 0.1, 'sine', 0.18);
       setTimeout(() => blip(990, 0.14, 'sine', 0.18), 70);

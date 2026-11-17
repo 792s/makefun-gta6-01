@@ -36,6 +36,33 @@ function fail(message: string): never {
 const gameDir = join(here, 'game');
 if (!existsSync(gameDir)) fail('game/ is missing next to main.ts — nothing to hand in.');
 if (!existsSync(join(gameDir, 'index.html'))) fail('game/index.html is missing — the game has no page to open.');
+
+// The scorer's own caps (reference/gate.json): at most 993 files in game/
+// and 48 MiB of game files in all, no path under game/ over 1000 bytes.
+// Check the tree before copying, so a bad entry fails here with a clear
+// message instead of being refused at the gate.
+function checkGameTree(dir, prefix) {
+  let files = 0;
+  let bytes = 0;
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    const rel = prefix ? `${prefix}/${name}` : name;
+    if (rel.length > 1000) fail(`game/${rel} is over 1000 bytes long as a path.`);
+    const stats = statSync(path);
+    if (stats.isDirectory()) {
+      const sub = checkGameTree(path, rel);
+      files += sub.files;
+      bytes += sub.bytes;
+    } else {
+      files += 1;
+      bytes += stats.size;
+    }
+  }
+  return { files, bytes };
+}
+const tree = checkGameTree(gameDir, '');
+if (tree.files > 993) fail(`game/ holds ${tree.files} files; the gate allows at most 993.`);
+if (tree.bytes > 50331648) fail(`game/ is ${tree.bytes} bytes; the gate allows at most 48 MiB.`);
 const shotsDir = join(here, 'screenshots');
 if (!existsSync(shotsDir)) fail('screenshots/ is missing next to main.ts — the judge needs 3 or 4 screenshots.');
 const shots = readdirSync(shotsDir).filter((name) => !name.startsWith('.'));
@@ -43,8 +70,31 @@ if (shots.length < MIN_SCREENSHOTS || shots.length > MAX_SCREENSHOTS) {
   fail(`screenshots/ holds ${shots.length} image(s); the competition needs ${MIN_SCREENSHOTS} to ${MAX_SCREENSHOTS}.`);
 }
 for (const name of shots) {
+  if (!/\.(jpg|jpeg|png)$/i.test(name)) {
+    fail(`screenshots/${name} is not a JPEG or PNG image.`);
+  }
   const size = statSync(join(shotsDir, name)).size;
   if (size > MAX_SCREENSHOT_BYTES) fail(`screenshots/${name} is ${size} bytes, over the 256 KiB limit.`);
+}
+
+// --stats: print what the entry holds and stop, without copying anything.
+// A quick sanity check before the real run, and the same numbers the judge
+// sees in the dossier, in one line each.
+function printStats(): void {
+  const srcDir = join(gameDir, 'src');
+  const modules = existsSync(srcDir)
+    ? readdirSync(srcDir).filter((name) => name.endsWith('.js')).sort()
+    : [];
+  console.log(`[entry] game/: ${tree.files} files, ${tree.bytes} bytes`);
+  console.log(`[entry] game/src/: ${modules.length} modules — ${modules.join(', ')}`);
+  for (const name of shots) {
+    console.log(`[entry] screenshots/${name}: ${statSync(join(shotsDir, name)).size} bytes`);
+  }
+  console.log(`[entry] dossier would go to ${join(out, 'dossier.json')}`);
+}
+if (process.argv.includes('--stats')) {
+  printStats();
+  process.exit(0);
 }
 
 mkdirSync(out, { recursive: true });
@@ -66,3 +116,4 @@ writeFileSync(
     game_path_max_bytes: 1000,
   }),
 );
+console.log(`[entry] handed in: ${tree.files} game files (${tree.bytes} bytes), ${shots.length} screenshots, dossier at ${join(out, 'dossier.json')}`);

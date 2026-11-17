@@ -19,6 +19,16 @@ import {
 } from './missions.js';
 import { saveGame } from './save.js';
 import { ACTION_ENTER, ACTION_RELOAD } from './input.js';
+import { ACTION_RADIO, ACTION_GARAGE, ACTION_NITRO, ACTION_PHOTO } from './input.js';
+import { createDayNight, updateDayNight } from './daynight.js';
+import { createRadio, updateRadio, nextStation, stationLine } from './radio.js';
+import { createTaxi, updateTaxi } from './taxi.js';
+import { createRaces, updateRaces } from './races.js';
+import { createGarage, afterDrive, useNitro } from './garage.js';
+import { createPackages, updatePackages } from './packages.js';
+import { createViewpoints, updateViewpoints } from './viewpoints.js';
+import { createChallenges, updateChallenges } from './challenges.js';
+import { createChatter, updateChatter } from './chatter.js';
 
 export function createWorld(seed) {
   const rng = createRandom(seed);
@@ -32,6 +42,13 @@ export function createWorld(seed) {
   // facing down the road so driving off is smooth.
   const ownCar = createCar(734, 540, Math.PI / 2, 'sedan', rng, { state: 'parked', color: '#4f7ec9' });
   cars.push(ownCar);
+  ownCar.isOwnCar = true;
+  const garage = createGarage();
+  ownCar.color = garage.paint;
+  ownCar.tune = garage.engine;
+  ownCar.armor = garage.armor;
+  ownCar.tires = garage.tires;
+  ownCar.maxHealth = 100 + 50 * garage.armor;
   return {
     seed,
     rng,
@@ -47,9 +64,21 @@ export function createWorld(seed) {
       { x: city.locations.hospital.x, y: city.locations.hospital.y, kind: 'health' },
       { x: start.x - 40, y: start.y + 30, kind: 'health' },
       { x: city.locations.park.x, y: city.locations.park.y, kind: 'health' },
+      // A wrench at Eddie's Garage: drive a damaged car over it and the
+      // car comes back to full health. It turns up elsewhere after use.
+      { x: city.locations.eddiesGarage.x, y: city.locations.eddiesGarage.y, kind: 'repair' },
     ],
     wanted: createWanted(),
     missions: createMissionState(),
+    daynight: createDayNight(),
+    radio: createRadio(),
+    taxi: createTaxi(),
+    races: createRaces(),
+    garage,
+    packages: createPackages(),
+    viewpoints: createViewpoints(),
+    challenges: createChallenges(),
+    chatter: createChatter(),
     money: 0,
     time: 0,
     camera: { x: start.x, y: start.y, zoom: 1 },
@@ -103,14 +132,57 @@ function updateParticles(state, dt) {
   if (state.skids.length > 300) state.skids.splice(0, state.skids.length - 300);
 }
 
+/** A car that just hit zero health: one explosion, then it burns. */
 function carWrecked(state, car) {
+  car.exploded = true;
+  car.burnLeft = CAR.burnTime;
   addParticles(state, car.x, car.y, 26, '#ff7b2e', 220, 0.7, 5);
   addParticles(state, car.x, car.y, 18, '#555555', 90, 1.6, 9);
   if (state.player.car === car) {
     exitCar(state.player, state.city);
+    car.state = 'wreck'; // exitCar parks it; a wreck stays a wreck.
     damagePlayer(state.player, 25);
     addToast(state, 'Your car is wrecked!', 3);
   }
+}
+
+/**
+ * One step for every wreck and every smoking car: a fresh wreck explodes
+ * once (and ejects its driver), a burning wreck throws fire and smoke until
+ * it is a husk, and a husk far from the player is cleared away so wrecks do
+ * not pile up. Smoking cars puff grey smoke. Returns explosion events.
+ */
+function updateWrecks(state, dt) {
+  const events = [];
+  const player = state.player;
+  for (let i = state.cars.length - 1; i >= 0; i -= 1) {
+    const car = state.cars[i];
+    if (car.state === 'wreck') {
+      if (!car.exploded) {
+        carWrecked(state, car);
+        events.push({ type: 'explosion', x: car.x, y: car.y });
+        if (player.health <= 0 && !state.gameOver) {
+          state.gameOver = 'wasted';
+          events.push({ type: 'wasted' });
+        }
+      } else if (car.burnLeft > 0) {
+        car.burnLeft -= dt;
+        if (Math.random() < 0.5) {
+          addParticles(state, car.x, car.y, 1, '#ff7b2e', 60, 0.5, 6);
+        }
+        if (Math.random() < 0.5) {
+          addParticles(state, car.x, car.y, 1, '#555555', 30, 1.4, 9);
+        }
+      } else if (car !== state.missions.cometCar
+        && Math.hypot(car.x - player.x, car.y - player.y) > 700) {
+        // Burnt out and out of sight: clear the husk away.
+        state.cars.splice(i, 1);
+      }
+    } else if (car.smoking && Math.random() < 0.3) {
+      addParticles(state, car.x, car.y, 1, '#666666', 30, 1.2, 7);
+    }
+  }
+  return events;
 }
 
 /**
@@ -134,6 +206,20 @@ export function stepWorld(state, input, mouseWorld, dt) {
 
   const player = state.player;
   const actions = input.takeActions(ACTION_ENTER | ACTION_RELOAD);
+  const sideActions = input.takeActions(ACTION_RADIO | ACTION_GARAGE | ACTION_NITRO | ACTION_PHOTO);
+  // Eddie's shop: the world waits while Kai browses, and G closes it again.
+  if (state.garage.open) {
+    if (sideActions & ACTION_GARAGE) state.garage.open = false;
+    return events;
+  }
+  if ((sideActions & ACTION_GARAGE) && player.state === 'foot') {
+    const shop = state.city.locations.eddiesGarage;
+    if (Math.hypot(player.x - shop.x, player.y - shop.y) < 90) {
+      state.garage.open = true;
+      addToast(state, "Eddie's Garage — click what you want, G to leave", 3);
+      return events;
+    }
+  }
 
   // --- Player: on foot or in a car ---
   if (player.state === 'foot') {
@@ -171,13 +257,21 @@ export function stepWorld(state, input, mouseWorld, dt) {
     const dir = input.direction();
     const throttle = dir.y < 0 ? 1 : dir.y > 0 ? -1 : 0;
     const steer = dir.x;
-    const before = player.car.health;
     const hit = driveCar(player.car, throttle, steer, input.run, dt, state.city);
     if (hit > 0.15) {
       events.push({ type: 'crash', x: player.car.x, y: player.car.y, strength: hit });
       addParticles(state, player.car.x, player.car.y, 8, '#ffd94d', 150, 0.3, 3);
     }
-    if (player.car.state === 'wreck' && before > 0) carWrecked(state, player.car);
+    // The garage mods bite after the physics: tuning past the stock cap,
+    // armour refunding part of a crash, nitro on the N key.
+    afterDrive(state, player.car, throttle, hit, dt);
+    if (sideActions & ACTION_NITRO) {
+      if (useNitro(state)) {
+        addParticles(state, player.car.x, player.car.y, 12, '#4da3ff', 200, 0.4, 4);
+        addToast(state, 'NITRO!', 1);
+      }
+    }
+    // A wrecked car explodes in updateWrecks below, like any other car.
     if (player.car.skidding) {
       state.skids.push({
         x1: player.car.x - Math.cos(player.car.angle) * 20,
@@ -187,9 +281,6 @@ export function stepWorld(state, input, mouseWorld, dt) {
         life: 4,
       });
     }
-    if (player.car.smoking && Math.random() < 0.3) {
-      addParticles(state, player.car.x, player.car.y, 1, '#666666', 30, 1.2, 7);
-    }
     player.x = player.car.x;
     player.y = player.car.y;
     player.angle = player.car.angle;
@@ -197,6 +288,12 @@ export function stepWorld(state, input, mouseWorld, dt) {
       exitCar(player, state.city);
       events.push({ type: 'exitCar' });
     }
+  }
+
+  // The radio dial: V changes the station while driving.
+  if ((sideActions & ACTION_RADIO) && player.state === 'car') {
+    const stationName = nextStation(state.radio);
+    addToast(state, `${stationName} — ${stationLine(state.radio)}`, 2);
   }
 
   // --- Traffic, collisions, pedestrians ---
@@ -254,7 +351,7 @@ export function stepWorld(state, input, mouseWorld, dt) {
       }
     } else if (e.type === 'hitCar') {
       addParticles(state, e.x, e.y, 5, '#ffd94d', 140, 0.25, 3);
-      if (e.target.state === 'wreck') carWrecked(state, e.target);
+      // A car shot to zero health explodes in updateWrecks, like any wreck.
     } else if (e.type === 'hitPlayer') {
       if (damagePlayer(player, e.damage)) {
         state.gameOver = 'wasted';
@@ -264,6 +361,9 @@ export function stepWorld(state, input, mouseWorld, dt) {
       }
     }
   }
+
+  // --- Wrecks, fires, smoke ---
+  for (const e of updateWrecks(state, dt)) events.push(e);
 
   // --- Police, missions, enemies ---
   const policeEvents = updatePolice(state, dt, state.city, state.rng);
@@ -286,6 +386,10 @@ export function stepWorld(state, input, mouseWorld, dt) {
       state.dialogueLeft = 5;
       saveGame(state);
       events.push({ type: 'cash' });
+    } else if (e.type === 'missionFailed') {
+      state.dialogue = `Too slow — the buyer walked away. ${e.name} failed; Eddie will remember that.`;
+      state.dialogueLeft = 5;
+      addToast(state, 'Mission failed — you can try again', 4);
     } else if (e.type === 'toast') {
       addToast(state, e.text, 4);
     }
@@ -299,6 +403,22 @@ export function stepWorld(state, input, mouseWorld, dt) {
     }
   }
 
+  // --- Side activities: the sky, the radio, the cab, the races, the parcels ---
+  updateDayNight(state, dt);
+  updateRadio(state.radio, state, dt);
+  const sideEvents = [
+    ...updateTaxi(state, dt),
+    ...updateRaces(state, dt),
+    ...updatePackages(state, dt),
+    ...updateViewpoints(state, dt, (sideActions & ACTION_PHOTO) !== 0),
+    ...updateChallenges(state, dt),
+    ...updateChatter(state, dt),
+  ];
+  for (const e of sideEvents) {
+    if (e.type === 'toast') addToast(state, e.text, 4);
+    events.push(e);
+  }
+
   // --- Pickups ---
   for (const pickup of state.pickups) {
     if (player.state === 'foot' && Math.hypot(pickup.x - player.x, pickup.y - player.y) < 30) {
@@ -310,6 +430,18 @@ export function stepWorld(state, input, mouseWorld, dt) {
         pickup.x = state.city.locations.hospital.x + (Math.random() - 0.5) * 120;
         pickup.y = state.city.locations.hospital.y + (Math.random() - 0.5) * 120;
       }
+    } else if (player.state === 'car' && player.car && pickup.kind === 'repair'
+      && player.car.health < CAR.health
+      && Math.hypot(pickup.x - player.car.x, pickup.y - player.car.y) < 40) {
+      // Drive a damaged car over the wrench: full repair, smoke gone.
+      player.car.health = CAR.health;
+      player.car.smoking = false;
+      events.push({ type: 'pickup' });
+      addToast(state, 'Wrench pickup — car repaired', 2);
+      // The wrench turns up somewhere else around the garage.
+      const g = state.city.locations.eddiesGarage;
+      pickup.x = Math.max(120, Math.min(3080, g.x + (Math.random() - 0.5) * 400));
+      pickup.y = Math.max(120, Math.min(2200, g.y + (Math.random() - 0.5) * 400));
     }
   }
 

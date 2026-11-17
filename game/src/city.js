@@ -96,6 +96,8 @@ export function generateCity(rng) {
     hospital: { x: 2300, y: 700, name: 'St. Mara Hospital' },
     park: { x: 1300, y: 1300, name: 'Palm Park' },
     beach: { x: 1600, y: 2240, name: 'Solmara Beach' },
+    warehouse: { x: 3050, y: 300, name: 'North Warehouse' },
+    market: { x: 900, y: 1500, name: 'Palm Market' },
   };
 
   return { buildings, trees, containers, lamps, locations, roadsX: ROAD_X, roadsY: ROAD_Y };

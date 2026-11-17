@@ -26,6 +26,10 @@ export function createCar(x, y, angle, type, rng, opts = {}) {
     color: opts.color || (rng ? rng.pick(spec.colors) : spec.colors[0]),
     state: opts.state || 'parked', // parked | traffic | player | police | wreck
     health: CAR_TUNE.health,
+    // Fire state: a wreck burns for CAR_TUNE.burnTime seconds after its one
+    // explosion, then it is a dead husk. `exploded` keeps the blast to one.
+    burnLeft: 0,
+    exploded: false,
     // Traffic AI state: which road it follows and which way.
     road: opts.road || null,
     dir: opts.dir || 1,

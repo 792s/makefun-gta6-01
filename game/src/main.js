@@ -8,6 +8,7 @@
 // window.__shotReady for a screenshot.
 import { STEP } from './config.js';
 import { createWorld, stepWorld, stepAmbient, respawn } from './world.js';
+import { MISSIONS } from './missions.js';
 import { createInput, ACTION_CONFIRM, ACTION_PAUSE, ACTION_MUTE } from './input.js';
 import { createAudio } from './audio.js';
 import {
@@ -15,6 +16,8 @@ import {
 } from './render.js';
 import { stageShot } from './shots.js';
 import { loadGame, hasSave, clearSave } from './save.js';
+import { unlockRadio, setRadioMuted } from './radio.js';
+import { handleGarageClick } from './garage.js';
 
 /** The longest frame the loop catches up on; a longer stall (a hidden tab) is dropped, not replayed. */
 const MAX_FRAME = 0.25;
@@ -31,6 +34,13 @@ const renderer = createRenderer(canvas);
 
 function runShot(name) {
   const world = createWorld(seed);
+  // A night drive for the cover set: ?shot=drive&night=1 stages the beach
+  // road at half past nine, lamps on, sea black.
+  if (params.get('night')) {
+    world.daynight.minutes = 21 * 60 + 30;
+    world.daynight.weather = 'clear';
+    world.daynight.weatherLeft = 120;
+  }
   const scene = stageShot(name, world);
   let painted = 0;
   function paint() {
@@ -77,6 +87,7 @@ function runGame() {
     world = createWorld(seed);
     screen = SCREEN_PLAY;
     audio.unlock();
+    unlockRadio(world.radio);
     audio.click();
     input.mouse.down = false;
     announce('New game. Follow the yellow marker to your first job.');
@@ -87,7 +98,7 @@ function runGame() {
     if (!data) return;
     world = createWorld(seed);
     world.money = data.money;
-    world.missions.done = Math.min(data.missionsDone, 4);
+    world.missions.done = Math.min(data.missionsDone, MISSIONS.length);
     world.player.x = data.x;
     world.player.y = data.y;
     world.player.health = data.health;
@@ -95,6 +106,7 @@ function runGame() {
     world.camera.y = data.y;
     screen = SCREEN_PLAY;
     audio.unlock();
+    unlockRadio(world.radio);
     audio.click();
     input.mouse.down = false;
     announce(`Continued. $${data.money}, ${data.missionsDone} missions done.`);
@@ -104,6 +116,8 @@ function runGame() {
     for (const e of events) {
       if (e.type === 'gunshot') audio.gunshot();
       else if (e.type === 'crash') audio.crash(e.strength || 0.3);
+      else if (e.type === 'explosion') audio.explosion();
+      else if (e.type === 'missionFailed') audio.fail();
       else if (e.type === 'pickup') audio.pickup();
       else if (e.type === 'cash') audio.cash();
       else if (e.type === 'missionComplete') audio.missionDone();
@@ -171,6 +185,7 @@ function runGame() {
     if (actions & ACTION_MUTE) {
       muted = !muted;
       audio.setMuted(muted);
+      if (world.radio) setRadioMuted(world.radio, muted);
     }
     const clicked = input.takeClick() ? clickButton() : null;
     if (screen === SCREEN_TITLE) {
@@ -189,6 +204,11 @@ function runGame() {
       if (actions & ACTION_PAUSE) {
         screen = SCREEN_PAUSED;
         announce('Paused.');
+      }
+      // The garage menu is clicked, not typed: buy or close, then say so.
+      if (clicked && clicked.startsWith('garage-') && world.garage.open) {
+        const bought = handleGarageClick(world, clicked);
+        if (bought.text) announce(bought.text);
       }
     } else if (screen === SCREEN_PAUSED) {
       if ((actions & ACTION_PAUSE) || (actions & ACTION_CONFIRM)) {

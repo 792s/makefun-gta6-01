@@ -51,6 +51,10 @@ function stageChase(state) {
     cop.speed = 430;
     state.cars.push(cop);
   }
+  // The last patrol car has been in the chase a while: it smokes, and the
+  // cover shows the damage system at a glance.
+  state.cars[state.cars.length - 1].health = 25;
+  state.cars[state.cars.length - 1].smoking = true;
   // Mission 2's last step, so the objective and the marker show.
   state.missions.active = { index: 1, step: 2 };
   state.missions.done = 1;
@@ -90,6 +94,10 @@ function stageDrive(state) {
   state.cars.push(car);
   enterCar(state.player, car);
   car.speed = 360;
+  // The car is already battered from the last job: the car-health bar and
+  // the smoking warning show in the frame.
+  car.health = 25;
+  car.smoking = true;
   state.player.x = car.x;
   state.player.y = car.y;
   state.money = 800;

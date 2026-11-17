@@ -5,6 +5,13 @@ import { PALETTE, WORLD } from './config.js';
 import { ROAD_HALF, ROAD_W } from './city.js';
 import { currentMarker } from './missions.js';
 import { drawHUD } from './hud.js';
+import { drawDayNight, drawNightLights } from './daynight.js';
+import { drawTaxiMarkers } from './taxi.js';
+import { drawRaceMarkers } from './races.js';
+import { drawPackages } from './packages.js';
+import { drawViewpoints } from './viewpoints.js';
+import { drawChatter } from './chatter.js';
+import { drawGarage } from './garage.js';
 
 export const SCREEN_TITLE = 'title';
 export const SCREEN_PLAY = 'play';
@@ -195,6 +202,18 @@ export function createRenderer(canvas) {
       ctx.arc(0, 0, 40, 0, Math.PI * 2);
       ctx.fill();
     }
+    // A burning wreck flickers orange — get out, or get clear.
+    if (car.state === 'wreck' && car.burnLeft > 0) {
+      const flicker = 0.35 + Math.random() * 0.3;
+      ctx.fillStyle = `rgba(255, 123, 46, ${flicker})`;
+      ctx.beginPath();
+      ctx.arc(0, 0, 34 + Math.random() * 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffd94d';
+      ctx.beginPath();
+      ctx.arc((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 12, 5 + Math.random() * 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -235,6 +254,7 @@ export function createRenderer(canvas) {
     drawGround(state);
     drawRoads(state);
     drawBuildings(state);
+    drawNightLights(ctx, state);
     // Skid marks.
     ctx.strokeStyle = 'rgba(20, 20, 20, 0.5)';
     ctx.lineWidth = 4;
@@ -246,14 +266,34 @@ export function createRenderer(canvas) {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    // Health pickups.
+    // Pickups: a red cross heals Kai on foot, an orange wrench repairs a car.
     for (const p of state.pickups) {
+      if (p.kind === 'repair') {
+        ctx.fillStyle = '#ff9f1c';
+        ctx.fillRect(p.x - 10, p.y - 10, 20, 20);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(p.x - 4, p.y - 4, 4, 0.6, Math.PI * 1.9);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(p.x - 1, p.y - 1);
+        ctx.lineTo(p.x + 7, p.y + 7);
+        ctx.stroke();
+        continue;
+      }
       ctx.fillStyle = '#fff';
       ctx.fillRect(p.x - 10, p.y - 10, 20, 20);
       ctx.fillStyle = '#e74c3c';
       ctx.fillRect(p.x - 3, p.y - 8, 6, 16);
       ctx.fillRect(p.x - 8, p.y - 3, 16, 6);
     }
+    // The side games mark their spots: cab fares, race flags, parcels.
+    drawTaxiMarkers(ctx, state);
+    drawRaceMarkers(ctx, state);
+    drawPackages(ctx, state);
+    drawViewpoints(ctx, state);
+    drawChatter(ctx, state);
     // The mission marker: a beam of light and a pulsing ring.
     const marker = currentMarker(state);
     if (marker) {
@@ -381,12 +421,17 @@ export function createRenderer(canvas) {
       'Mouse — aim. Click (hold) — shoot. R — reload.',
       'P / Esc — pause.  M — mute.',
       '',
-      'Follow the yellow marker: it is your next job. Finish all four',
+      'Follow the yellow marker: it is your next job. Finish all five',
       'missions to clear the story — or just cruise Solmara and see',
       'how long you can stay ahead of the law.',
       'Crimes raise your wanted level. Break line of sight and the',
       'heat cools off, one star at a time. Walk into your apartment',
       'to save your progress.',
+      '',
+      'Cars take damage in crashes and shootouts: smoke means trouble,',
+      'fire means get out — a wreck explodes. An orange wrench pickup',
+      'at Eddie\'s Garage repairs your ride. Timed jobs show a countdown;',
+      'miss it and the deal is off.',
     ];
     lines.forEach((line, i) => ctx.fillText(line, width / 2 - 330, 130 + i * 30));
     drawButton('back', 'BACK', width / 2 - 100, 130 + lines.length * 30 + 16, 200, 48, true);
@@ -433,8 +478,14 @@ export function createRenderer(canvas) {
       buttons.length = 0;
       ctx.clearRect(0, 0, width, height);
       drawWorld(state);
+      drawDayNight(ctx, state, width, height);
       if (screen === SCREEN_PLAY || screen === SCREEN_PAUSED) {
         drawHUD(ctx, state, width, height);
+      }
+      if (state.garage.open && (screen === SCREEN_PLAY || screen === SCREEN_PAUSED)) {
+        drawGarage(ctx, state, width, height, (id, label, x, y, w, h, enabled) => {
+          drawButton(id, label, x, y, w, h, enabled);
+        });
       }
       if (screen === SCREEN_TITLE) drawTitle(state, ui);
       else if (screen === SCREEN_HELP) drawHelp();

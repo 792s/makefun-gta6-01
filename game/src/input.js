@@ -5,6 +5,10 @@ export const ACTION_PAUSE = 2;
 export const ACTION_ENTER = 4;
 export const ACTION_RELOAD = 8;
 export const ACTION_MUTE = 16;
+export const ACTION_RADIO = 32;
+export const ACTION_GARAGE = 64;
+export const ACTION_NITRO = 128;
+export const ACTION_PHOTO = 256;
 
 const KEYMAP = {
   KeyW: 'up', ArrowUp: 'up',
@@ -32,6 +36,10 @@ export function createInput(canvas) {
     else if (event.code === 'KeyE') actions |= ACTION_ENTER;
     else if (event.code === 'KeyR') actions |= ACTION_RELOAD;
     else if (event.code === 'KeyM') actions |= ACTION_MUTE;
+    else if (event.code === 'KeyV') actions |= ACTION_RADIO;
+    else if (event.code === 'KeyG') actions |= ACTION_GARAGE;
+    else if (event.code === 'KeyN') actions |= ACTION_NITRO;
+    else if (event.code === 'KeyF') actions |= ACTION_PHOTO;
   }
   function onKeyUp(event) {
     const name = KEYMAP[event.code];

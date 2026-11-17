@@ -56,6 +56,8 @@ export const CAR = {
   grip: 6.5,
   radius: 26,
   health: 100,
+  // Seconds a wrecked car burns before it is just a husk.
+  burnTime: 8,
   // A sports car is quicker and grippier.
   sportsAccel: 560,
   sportsMaxSpeed: 680,
@@ -87,6 +89,8 @@ export const POLICE = {
   sightRange: 620,
 };
 
-export const MISSION_PAY = [300, 500, 800, 1200];
+export const MISSION_PAY = [300, 500, 800, 1200, 1500];
+// The Long Haul gives Kai two and a half minutes for three stops.
+export const MISSION_TIME_LIMIT = 150;
 export const SAVE_KEY = 'solmara-save-v1';
 export const BEST_KEY = 'solmara-best-v1';
